@@ -117,6 +117,8 @@ staticPasswords:
   hash: "$2a$10$33EMT0cVYVlPy6WAMCLsceLYjWhuHpbz5yuZxu/GAFj03J9Lytjuy"
   username: "admin"
   userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+  groups:
+  - "admin"
 - email: "foo@example.com"
   # base64'd value of the same bcrypt hash above. We want to be able to parse both of these
   hash: "JDJhJDEwJDMzRU1UMGNWWVZsUHk2V0FNQ0xzY2VMWWpXaHVIcGJ6NXl1Wnh1L0dBRmowM0o5THl0anV5"
@@ -210,6 +212,7 @@ additionalFeatures: [
 				Hash:     []byte("$2a$10$33EMT0cVYVlPy6WAMCLsceLYjWhuHpbz5yuZxu/GAFj03J9Lytjuy"),
 				Username: "admin",
 				UserID:   "08a8684b-db88-4b73-90a9-3cd1661f5466",
+				Groups:   []string{"admin"},
 			},
 			{
 				Email:    "foo@example.com",
@@ -335,6 +338,8 @@ staticPasswords:
   hash: "$2a$10$33EMT0cVYVlPy6WAMCLsceLYjWhuHpbz5yuZxu/GAFj03J9Lytjuy"
   username: "admin"
   userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+  groups:
+  - "admins"
 - email: "foo@example.com"
   hashFromEnv: "DEX_FOO_USER_PASSWORD"
   username: "foo"
@@ -424,6 +429,7 @@ logger:
 				Hash:     []byte("$2a$10$33EMT0cVYVlPy6WAMCLsceLYjWhuHpbz5yuZxu/GAFj03J9Lytjuy"),
 				Username: "admin",
 				UserID:   "08a8684b-db88-4b73-90a9-3cd1661f5466",
+				Groups:   []string{"admins"},
 			},
 			{
 				Email:    "foo@example.com",

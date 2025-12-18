@@ -569,6 +569,7 @@ func (db passwordDB) Login(ctx context.Context, s connector.Scopes, email, passw
 		Username:      p.Username,
 		Email:         p.Email,
 		EmailVerified: true,
+		Groups:        p.Groups,
 	}, true, nil
 }
 
@@ -591,8 +592,9 @@ func (db passwordDB) Refresh(ctx context.Context, s connector.Scopes, identity c
 	// refreshed token.
 	//
 	// No other fields are expected to be refreshable as email is effectively used
-	// as an ID and this implementation doesn't deal with groups.
+	// as an ID.
 	identity.Username = p.Username
+	identity.Groups = p.Groups
 
 	return identity, nil
 }
