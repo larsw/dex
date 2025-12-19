@@ -149,7 +149,7 @@ func (c *conn) identityFromCredentials(cred *credentials.Credentials) connector.
 		Username:          username,
 		PreferredUsername: preferred,
 		EmailVerified:     false,
-		Groups:            cleanGroups(cred.AuthzAttributes()),
+		Groups:            cleanGroups(mergeGroups(cred)),
 	}
 }
 
@@ -168,6 +168,15 @@ func cleanGroups(groups []string) []string {
 		cleaned = append(cleaned, g)
 	}
 	return cleaned
+}
+
+func mergeGroups(cred *credentials.Credentials) []string {
+	groups := cred.AuthzAttributes()
+	ad := cred.GetADCredentials()
+	if len(ad.GroupMembershipSIDs) > 0 {
+		groups = append(groups, ad.GroupMembershipSIDs...)
+	}
+	return groups
 }
 
 var (

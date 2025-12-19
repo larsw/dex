@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dexconnector "github.com/dexidp/dex/connector"
+	"github.com/jcmturner/gokrb5/v8/credentials"
 	gokrbspnego "github.com/jcmturner/gokrb5/v8/spnego"
 	"github.com/jcmturner/krb5test"
 )
@@ -91,4 +92,17 @@ func TestChallengeAuthenticatesUser(t *testing.T) {
 	require.False(t, handled)
 	require.Equal(t, "testuser@"+kdc.Realm, identity.UserID)
 	require.Equal(t, "testuser", identity.Username)
+}
+
+func TestIdentityIncludesPACGroups(t *testing.T) {
+	conn := &conn{realm: "EXAMPLE.COM"}
+	cred := credentials.New("user", "EXAMPLE.COM")
+	cred.SetAuthenticated(true)
+	cred.AddAuthzAttribute("group1")
+	cred.SetAttribute(credentials.AttributeKeyADCredentials, credentials.ADCredentials{
+		GroupMembershipSIDs: []string{"S-1-1-0", "group1"},
+	})
+
+	identity := conn.identityFromCredentials(cred)
+	require.ElementsMatch(t, []string{"group1", "S-1-1-0"}, identity.Groups)
 }
