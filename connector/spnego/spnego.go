@@ -44,8 +44,12 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
 		return nil, fmt.Errorf("spnego: failed to load keytab: %w", err)
 	}
 
+	level := slog.LevelInfo
+	if logger != nil && logger.Enabled(context.Background(), slog.LevelDebug) {
+		level = slog.LevelDebug
+	}
 	opts := []func(*service.Settings){
-		service.Logger(slog.NewLogLogger(logger.Handler(), slog.LevelInfo)),
+		service.Logger(slog.NewLogLogger(logger.Handler(), level)),
 	}
 
 	if c.ServicePrincipal != "" {

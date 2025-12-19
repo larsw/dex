@@ -392,7 +392,7 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "failed to complete challenge login", "err", err)
 			if !handled {
-				s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+				s.renderError(r, w, http.StatusInternalServerError, "Challenge login error.")
 			}
 			return
 		}
