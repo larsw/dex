@@ -360,6 +360,49 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		s.renderError(r, w, http.StatusInternalServerError, "Requested resource does not exist.")
 		return
 	}
+	scopes := parseScopes(authReq.Scopes)
+
+	completeLogin := func(identity connector.Identity) bool {
+		redirectURL, canSkipApproval, err := s.finalizeLogin(r.Context(), identity, authReq, conn.Connector)
+		if err != nil {
+			s.logger.ErrorContext(r.Context(), "failed to finalize login", "err", err)
+			s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+			return true
+		}
+
+		if canSkipApproval {
+			authReq, err = s.storage.GetAuthRequest(ctx, authReq.ID)
+			if err != nil {
+				s.logger.ErrorContext(r.Context(), "failed to get finalized auth request", "err", err)
+				s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+				return true
+			}
+			s.sendCodeResponse(w, r, authReq)
+			return true
+		}
+
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return true
+	}
+
+	if challengeConn, ok := conn.Connector.(connector.ChallengeConnector); ok {
+		identity, authenticated, handled, err := challengeConn.Challenge(r.Context(), scopes, w, r)
+		if err != nil {
+			s.logger.ErrorContext(r.Context(), "failed to complete challenge login", "err", err)
+			if !handled {
+				s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+			}
+			return
+		}
+		if authenticated {
+			if completeLogin(identity) {
+				return
+			}
+		}
+		if handled {
+			return
+		}
+	}
 
 	switch r.Method {
 	case http.MethodGet:
@@ -369,7 +412,6 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		username := r.FormValue("login")
 		password := r.FormValue("password")
-		scopes := parseScopes(authReq.Scopes)
 
 		identity, ok, err := pwConn.Login(r.Context(), scopes, username, password)
 		if err != nil {
@@ -384,25 +426,9 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username)
 			return
 		}
-		redirectURL, canSkipApproval, err := s.finalizeLogin(r.Context(), identity, authReq, conn.Connector)
-		if err != nil {
-			s.logger.ErrorContext(r.Context(), "failed to finalize login", "err", err)
-			s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+		if completeLogin(identity) {
 			return
 		}
-
-		if canSkipApproval {
-			authReq, err = s.storage.GetAuthRequest(ctx, authReq.ID)
-			if err != nil {
-				s.logger.ErrorContext(r.Context(), "failed to get finalized auth request", "err", err)
-				s.renderError(r, w, http.StatusInternalServerError, "Login error.")
-				return
-			}
-			s.sendCodeResponse(w, r, authReq)
-			return
-		}
-
-		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 	default:
 		s.renderError(r, w, http.StatusBadRequest, "Unsupported request method.")
 	}

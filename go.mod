@@ -20,6 +20,9 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
+	github.com/jcmturner/goidentity/v6 v6.0.1
+	github.com/jcmturner/gokrb5/v8 v8.4.4
+	github.com/jcmturner/krb5test v0.0.0-20201230140143-102e4b78cdb8
 	github.com/kylelemons/godebug v1.1.0
 	github.com/lib/pq v1.10.9
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
@@ -70,9 +73,14 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.7 // indirect
 	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
+	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/hcl/v2 v2.18.1 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
+	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
+	github.com/jcmturner/gofork v1.7.6 // indirect
+	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
