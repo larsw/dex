@@ -8,8 +8,8 @@ import (
 
 // Connector is a mechanism for federating login to a remote identity service.
 //
-// Implementations are expected to implement either the PasswordConnector or
-// CallbackConnector interface.
+// Implementations are expected to implement either the PasswordConnector,
+// ChallengeConnector, or CallbackConnector interface.
 type Connector interface{}
 
 // Scopes represents additional data requested by the clients about the end user.

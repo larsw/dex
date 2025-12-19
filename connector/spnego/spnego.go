@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/dexidp/dex/connector"
 	goidentity "github.com/jcmturner/goidentity/v6"
@@ -59,14 +60,6 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
 	}, nil
 }
 
-// Prompt returns an empty prompt because SPNEGO is negotiation-based.
-func (c *conn) Prompt() string { return "" }
-
-// Login is not supported because authentication is handled through SPNEGO.
-func (c *conn) Login(ctx context.Context, s connector.Scopes, username, password string) (connector.Identity, bool, error) {
-	return connector.Identity{}, false, errors.New("spnego connector does not support form login")
-}
-
 type responseRecorder struct {
 	http.ResponseWriter
 	status    int
@@ -74,17 +67,18 @@ type responseRecorder struct {
 }
 
 func (r *responseRecorder) WriteHeader(status int) {
-	if r.status == 0 {
-		r.status = status
+	if r.status != 0 {
+		return
 	}
+	r.status = status
 	r.ResponseWriter.WriteHeader(status)
 }
 
 func (r *responseRecorder) Write(b []byte) (int, error) {
-	r.wroteBody = true
 	if r.status == 0 {
-		r.status = http.StatusOK
+		r.WriteHeader(http.StatusOK)
 	}
+	r.wroteBody = true
 	return r.ResponseWriter.Write(b)
 }
 
@@ -92,32 +86,39 @@ func (r *responseRecorder) handled() bool {
 	return r.status != 0 || r.wroteBody
 }
 
+type credentialCapture struct {
+	conn     *conn
+	identity connector.Identity
+	err      error
+}
+
+func (c *credentialCapture) ServeHTTP(_ http.ResponseWriter, r *http.Request) {
+	id := goidentity.FromHTTPRequestContext(r)
+	cred, ok := id.(*credentials.Credentials)
+	if !ok || cred == nil || !cred.Authenticated() {
+		c.err = errors.New("spnego: missing kerberos credentials")
+		return
+	}
+	c.identity = c.conn.identityFromCredentials(cred)
+}
+
 // Challenge performs SPNEGO negotiation and returns an authenticated identity.
 func (c *conn) Challenge(ctx context.Context, s connector.Scopes, w http.ResponseWriter, r *http.Request) (connector.Identity, bool, bool, error) {
-	var identity connector.Identity
-	var challengeErr error
+	capture := &credentialCapture{conn: c}
 
-	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := goidentity.FromHTTPRequestContext(r)
-		cred, ok := id.(*credentials.Credentials)
-		if !ok || cred == nil || !cred.Authenticated() {
-			challengeErr = errors.New("spnego: missing kerberos credentials")
-			return
-		}
-		identity = c.identityFromCredentials(cred)
-	})
-
-	handler := gokrbspnego.SPNEGOKRB5Authenticate(capture, c.keytab, c.settings...)
+	handler := gokrbspnego.SPNEGOKRB5Authenticate(http.HandlerFunc(capture.ServeHTTP), c.keytab, c.settings...)
 	recorder := &responseRecorder{ResponseWriter: w}
 	handler.ServeHTTP(recorder, r.WithContext(ctx))
 
-	if identity.UserID != "" {
-		return identity, true, recorder.handled(), nil
+	// handled indicates the SPNEGO middleware already wrote a response (for example a 401 challenge).
+	handled := recorder.handled()
+	if capture.identity.UserID != "" {
+		return capture.identity, true, handled, nil
 	}
-	if challengeErr != nil {
-		return connector.Identity{}, false, recorder.handled(), challengeErr
+	if capture.err != nil {
+		return connector.Identity{}, false, handled, capture.err
 	}
-	if recorder.handled() {
+	if handled {
 		return connector.Identity{}, false, true, nil
 	}
 
@@ -144,11 +145,27 @@ func (c *conn) identityFromCredentials(cred *credentials.Credentials) connector.
 		Username:          username,
 		PreferredUsername: preferred,
 		EmailVerified:     false,
-		Groups:            cred.AuthzAttributes(),
+		Groups:            cleanGroups(cred.AuthzAttributes()),
 	}
 }
 
+func cleanGroups(groups []string) []string {
+	seen := make(map[string]struct{}, len(groups))
+	cleaned := make([]string, 0, len(groups))
+	for _, g := range groups {
+		g = strings.TrimSpace(g)
+		if g == "" {
+			continue
+		}
+		if _, ok := seen[g]; ok {
+			continue
+		}
+		seen[g] = struct{}{}
+		cleaned = append(cleaned, g)
+	}
+	return cleaned
+}
+
 var (
-	_ connector.PasswordConnector  = (*conn)(nil)
 	_ connector.ChallengeConnector = (*conn)(nil)
 )

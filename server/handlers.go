@@ -271,7 +271,7 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			http.Redirect(w, r, callbackURL, http.StatusFound)
-		case connector.PasswordConnector:
+		case connector.PasswordConnector, connector.ChallengeConnector:
 			loginURL := url.URL{
 				Path: s.absPath("/auth", connID, "login"),
 			}
@@ -354,9 +354,10 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pwConn, ok := conn.Connector.(connector.PasswordConnector)
-	if !ok {
-		s.logger.ErrorContext(r.Context(), "expected password connector in handlePasswordLogin()", "password_connector", pwConn)
+	pwConn, hasPassword := conn.Connector.(connector.PasswordConnector)
+	challengeConn, hasChallenge := conn.Connector.(connector.ChallengeConnector)
+	if !hasPassword && !hasChallenge {
+		s.logger.ErrorContext(r.Context(), "expected password or challenge connector in handlePasswordLogin()", "connector_id", authReq.ConnectorID)
 		s.renderError(r, w, http.StatusInternalServerError, "Requested resource does not exist.")
 		return
 	}
@@ -385,7 +386,8 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 
-	if challengeConn, ok := conn.Connector.(connector.ChallengeConnector); ok {
+	// Run challenge-based flows before method dispatch so negotiations (e.g., SPNEGO) can return the appropriate HTTP responses.
+	if hasChallenge {
 		identity, authenticated, handled, err := challengeConn.Challenge(r.Context(), scopes, w, r)
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "failed to complete challenge login", "err", err)
@@ -406,10 +408,18 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		if err := s.templates.password(r, w, r.URL.String(), "", usernamePrompt(pwConn), false, backLink); err != nil {
-			s.logger.ErrorContext(r.Context(), "server template error", "err", err)
+		if hasPassword {
+			if err := s.templates.password(r, w, r.URL.String(), "", usernamePrompt(pwConn), false, backLink); err != nil {
+				s.logger.ErrorContext(r.Context(), "server template error", "err", err)
+			}
+		} else {
+			s.renderError(r, w, http.StatusBadRequest, "Unsupported request method.")
 		}
 	case http.MethodPost:
+		if !hasPassword {
+			s.renderError(r, w, http.StatusBadRequest, "Unsupported request method.")
+			return
+		}
 		username := r.FormValue("login")
 		password := r.FormValue("password")
 
