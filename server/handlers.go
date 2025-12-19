@@ -363,12 +363,12 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	scopes := parseScopes(authReq.Scopes)
 
-	completeLogin := func(identity connector.Identity) bool {
+	completeLogin := func(identity connector.Identity) {
 		redirectURL, canSkipApproval, err := s.finalizeLogin(r.Context(), identity, authReq, conn.Connector)
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "failed to finalize login", "err", err)
 			s.renderError(r, w, http.StatusInternalServerError, "Login error.")
-			return true
+			return
 		}
 
 		if canSkipApproval {
@@ -376,14 +376,13 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				s.logger.ErrorContext(r.Context(), "failed to get finalized auth request", "err", err)
 				s.renderError(r, w, http.StatusInternalServerError, "Login error.")
-				return true
+				return
 			}
 			s.sendCodeResponse(w, r, authReq)
-			return true
+			return
 		}
 
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-		return true
 	}
 
 	// Run challenge-based flows before method dispatch so negotiations (e.g., SPNEGO) can return the appropriate HTTP responses.
@@ -397,9 +396,8 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if authenticated {
-			if completeLogin(identity) {
-				return
-			}
+			completeLogin(identity)
+			return
 		}
 		if handled {
 			return
@@ -436,9 +434,8 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username)
 			return
 		}
-		if completeLogin(identity) {
-			return
-		}
+		completeLogin(identity)
+		return
 	default:
 		s.renderError(r, w, http.StatusBadRequest, "Unsupported request method.")
 	}
