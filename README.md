@@ -77,6 +77,7 @@ Dex implements the following connectors:
 | [LinkedIn](https://dexidp.io/docs/connectors/linkedin/) | yes | no | no | beta | |
 | [Microsoft](https://dexidp.io/docs/connectors/microsoft/) | yes | yes | no | beta | |
 | [AuthProxy](https://dexidp.io/docs/connectors/authproxy/) | no | yes | no | alpha | Authentication proxies such as Apache2 mod_auth, etc. |
+| [SPNEGO](#spnego) | yes | yes | yes | alpha | Kerberos/Negotiate via gokrb5 |
 | [Bitbucket Cloud](https://dexidp.io/docs/connectors/bitbucketcloud/) | yes | yes | no | alpha | |
 | [OpenShift](https://dexidp.io/docs/connectors/openshift/) | yes | yes | no | alpha | |
 | [Atlassian Crowd](https://dexidp.io/docs/connectors/atlassian-crowd/) | yes | yes | yes * | beta | preferred_username claim must be configured through config |
@@ -90,6 +91,23 @@ Stable, beta, and alpha are defined as:
 * Alpha: may be untested by core maintainers and is subject to change in backward incompatible ways.
 
 All changes or deprecations of connector features will be announced in the [release notes][release-notes].
+
+### SPNEGO
+
+Dex can authenticate users with Kerberos/SPNEGO negotiation using the `spnego` connector backed by [gokrb5](https://github.com/jcmturner/gokrb5). Identities are recorded using the user principal name (`user@REALM`) so storage can track UPN/SPN data.
+
+Example configuration:
+
+```yaml
+connectors:
+  - type: spnego
+    id: spnego
+    name: Kerberos
+    config:
+      keytab: /etc/dex/http.keytab
+      servicePrincipal: HTTP/dex.example.com
+      realm: EXAMPLE.COM
+```
 
 ## Documentation
 

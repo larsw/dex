@@ -8,8 +8,8 @@ import (
 
 // Connector is a mechanism for federating login to a remote identity service.
 //
-// Implementations are expected to implement either the PasswordConnector or
-// CallbackConnector interface.
+// Implementations are expected to implement either the PasswordConnector,
+// ChallengeConnector, or CallbackConnector interface.
 type Connector interface{}
 
 // Scopes represents additional data requested by the clients about the end user.
@@ -45,6 +45,14 @@ type Identity struct {
 type PasswordConnector interface {
 	Prompt() string
 	Login(ctx context.Context, s Scopes, username, password string) (identity Identity, validPassword bool, err error)
+}
+
+// ChallengeConnector is implemented by connectors that perform an HTTP-based
+// negotiation (for example SPNEGO) instead of interactive credentials entry.
+// Implementations may write to the response to continue negotiation. When
+// handled is true the server will not render the password login template.
+type ChallengeConnector interface {
+	Challenge(ctx context.Context, s Scopes, w http.ResponseWriter, r *http.Request) (identity Identity, authenticated bool, handled bool, err error)
 }
 
 // CallbackConnector is an interface implemented by connectors which use an OAuth

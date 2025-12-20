@@ -19,7 +19,9 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
+	"log/slog"
 
+	"github.com/dexidp/dex/connector"
 	"github.com/dexidp/dex/storage"
 )
 
@@ -32,6 +34,54 @@ func TestHandleHealth(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200 got %d", rr.Code)
 	}
+}
+
+func TestHandleAuthorizationWithIDPHint(t *testing.T) {
+	httpServer, server := newTestServer(t, nil)
+	defer httpServer.Close()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth?client_id=client&redirect_uri=http://example.com/cb&response_type=code&idp_hint=mock", nil)
+
+	server.handleAuthorization(rr, req)
+
+	require.Equal(t, http.StatusFound, rr.Code)
+	loc, err := rr.Result().Location()
+	require.NoError(t, err)
+	require.Equal(t, "/auth/mock", loc.Path)
+	require.Equal(t, "client", loc.Query().Get("client_id"))
+}
+
+func TestHandleAuthorizationWithIDPHintConsent(t *testing.T) {
+	httpServer, server := newTestServer(t, nil)
+	defer httpServer.Close()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth?client_id=client&redirect_uri=http://example.com/cb&response_type=code&idp_hint=consent", nil)
+
+	server.handleAuthorization(rr, req)
+
+	require.Equal(t, http.StatusFound, rr.Code)
+	loc, err := rr.Result().Location()
+	require.NoError(t, err)
+	require.Equal(t, "/auth/mock", loc.Path)
+	require.Equal(t, "force", loc.Query().Get("approval_prompt"))
+}
+
+func TestHandleAuthorizationWithIDPHintLogin(t *testing.T) {
+	httpServer, server := newTestServer(t, nil)
+	defer httpServer.Close()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth?client_id=client&redirect_uri=http://example.com/cb&response_type=code&idp_hint=login", nil)
+
+	server.handleAuthorization(rr, req)
+
+	require.Equal(t, http.StatusFound, rr.Code)
+	loc, err := rr.Result().Location()
+	require.NoError(t, err)
+	require.Equal(t, "/auth/mock", loc.Path)
+	require.Equal(t, "force", loc.Query().Get("approval_prompt"))
 }
 
 func TestHandleDiscovery(t *testing.T) {
@@ -691,6 +741,80 @@ func TestHandleConnectorCallbackWithSkipApproval(t *testing.T) {
 			}
 		})
 	}
+}
+
+type fallbackChallengeConfig struct {
+	FallbackConnector string `json:"fallbackConnector"`
+}
+
+func (c *fallbackChallengeConfig) Open(_ string, _ *slog.Logger) (connector.Connector, error) {
+	return &fallbackChallenge{fallback: c.FallbackConnector}, nil
+}
+
+type fallbackChallenge struct {
+	fallback string
+}
+
+func (f *fallbackChallenge) Challenge(_ context.Context, _ connector.Scopes, _ http.ResponseWriter, _ *http.Request) (connector.Identity, bool, bool, error) {
+	return connector.Identity{}, false, false, nil
+}
+
+func (f *fallbackChallenge) FallbackConnector() string {
+	return f.fallback
+}
+
+func TestHandlePasswordLoginChallengeFallback(t *testing.T) {
+	ctx := t.Context()
+	const (
+		fallbackID  = "mock"
+		challengeID = "challenge"
+		authReqID   = "auth123"
+	)
+
+	old, hasOld := ConnectorsConfig["fallbackChallenge"]
+	ConnectorsConfig["fallbackChallenge"] = func() ConnectorConfig { return new(fallbackChallengeConfig) }
+	if hasOld {
+		defer func() { ConnectorsConfig["fallbackChallenge"] = old }()
+	} else {
+		defer delete(ConnectorsConfig, "fallbackChallenge")
+	}
+
+	httpServer, s := newTestServer(t, nil)
+	defer httpServer.Close()
+
+	challengeConnector := storage.Connector{
+		ID:              challengeID,
+		Type:            "fallbackChallenge",
+		Name:            "FallbackChallenge",
+		ResourceVersion: "1",
+		Config:          []byte(fmt.Sprintf(`{"fallbackConnector": %q}`, fallbackID)),
+	}
+	require.NoError(t, s.storage.CreateConnector(ctx, challengeConnector))
+	_, err := s.OpenConnector(challengeConnector)
+	require.NoError(t, err)
+
+	authReq := storage.AuthRequest{
+		ID:                  authReqID,
+		ConnectorID:         challengeID,
+		ClientID:            "client",
+		ResponseTypes:       []string{responseTypeCode},
+		Scopes:              []string{"openid"},
+		RedirectURI:         "http://example.com/cb",
+		ForceApprovalPrompt: false,
+		Expiry:              time.Now().Add(time.Hour),
+	}
+	require.NoError(t, s.storage.CreateAuthRequest(ctx, authReq))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth/challenge/login?state="+authReqID, nil)
+
+	s.handlePasswordLogin(rr, req)
+
+	require.Equal(t, http.StatusFound, rr.Code)
+	loc, err := rr.Result().Location()
+	require.NoError(t, err)
+	require.Equal(t, "/auth/mock", loc.Path)
+	require.Equal(t, authReqID, loc.Query().Get("state"))
 }
 
 func TestHandleTokenExchange(t *testing.T) {
