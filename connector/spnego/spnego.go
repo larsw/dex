@@ -24,13 +24,16 @@ type Config struct {
 	ServicePrincipal string `json:"servicePrincipal"`
 	// Realm optionally overrides the realm used when building the user identifier.
 	Realm string `json:"realm"`
+	// FallbackConnector optionally redirects to another connector when SPNEGO authentication is not successful.
+	FallbackConnector string `json:"fallbackConnector"`
 }
 
 type conn struct {
-	keytab   *keytab.Keytab
-	logger   *slog.Logger
-	settings []func(*service.Settings)
-	realm    string
+	keytab            *keytab.Keytab
+	logger            *slog.Logger
+	settings          []func(*service.Settings)
+	realm             string
+	fallbackConnector string
 }
 
 // Open initializes the connector.
@@ -57,10 +60,11 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
 	}
 
 	return &conn{
-		keytab:   kt,
-		logger:   logger.With(slog.Group("connector", "type", "spnego", "id", id)),
-		settings: opts,
-		realm:    c.Realm,
+		keytab:            kt,
+		logger:            logger.With(slog.Group("connector", "type", "spnego", "id", id)),
+		settings:          opts,
+		realm:             c.Realm,
+		fallbackConnector: c.FallbackConnector,
 	}, nil
 }
 
@@ -177,6 +181,10 @@ func mergeGroups(cred *credentials.Credentials) []string {
 		groups = append(groups, ad.GroupMembershipSIDs...)
 	}
 	return groups
+}
+
+func (c *conn) FallbackConnector() string {
+	return c.fallbackConnector
 }
 
 var (

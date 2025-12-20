@@ -146,6 +146,9 @@ func (s *Server) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	connectorID := r.Form.Get("connector_id")
+	if connectorID == "" {
+		connectorID = r.Form.Get("idp_hint")
+	}
 	connectors, err := s.storage.ListConnectors(ctx)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "failed to get list of connectors", "err", err)
@@ -155,6 +158,7 @@ func (s *Server) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 
 	// We don't need connector_id any more
 	r.Form.Del("connector_id")
+	r.Form.Del("idp_hint")
 
 	// Construct a URL with all of the arguments in its query
 	connURL := url.URL{
@@ -356,6 +360,10 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 
 	pwConn, hasPassword := conn.Connector.(connector.PasswordConnector)
 	challengeConn, hasChallenge := conn.Connector.(connector.ChallengeConnector)
+	var fallbackID string
+	if fc, ok := conn.Connector.(interface{ FallbackConnector() string }); ok {
+		fallbackID = fc.FallbackConnector()
+	}
 	if !hasPassword && !hasChallenge {
 		s.logger.ErrorContext(r.Context(), "expected password or challenge connector in handlePasswordLogin()", "connector_id", authReq.ConnectorID)
 		s.renderError(r, w, http.StatusInternalServerError, "Requested resource does not exist.")
@@ -398,6 +406,31 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		if authenticated {
 			completeLogin(identity)
 			return
+		}
+		if !handled && fallbackID != "" && fallbackID != authReq.ConnectorID {
+			if _, err := s.storage.GetConnector(ctx, fallbackID); err != nil {
+				s.logger.ErrorContext(r.Context(), "fallback connector not available", "fallback_id", fallbackID, "err", err)
+			} else {
+				if err := s.storage.UpdateAuthRequest(ctx, authReq.ID, func(old storage.AuthRequest) (storage.AuthRequest, error) {
+					old.ConnectorID = fallbackID
+					return old, nil
+				}); err != nil {
+					s.logger.ErrorContext(r.Context(), "failed to update auth request for fallback connector", "err", err)
+				} else {
+					authReq.ConnectorID = fallbackID
+					loginURL := url.URL{
+						Path: s.absPath("/auth", url.PathEscape(fallbackID)),
+					}
+					q := loginURL.Query()
+					q.Set("state", authReq.ID)
+					if backLink != "" {
+						q.Set("back", backLink)
+					}
+					loginURL.RawQuery = q.Encode()
+					http.Redirect(w, r, loginURL.String(), http.StatusFound)
+					return
+				}
+			}
 		}
 		if handled {
 			return
