@@ -146,8 +146,17 @@ func (s *Server) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	connectorID := r.Form.Get("connector_id")
+	idpHint := r.Form.Get("idp_hint")
+	switch idpHint {
+	case "login", "consent":
+		r.Form.Set("approval_prompt", "force")
+		idpHint = ""
+	case "none":
+		r.Form.Del("approval_prompt")
+		idpHint = ""
+	}
 	if connectorID == "" {
-		connectorID = r.Form.Get("idp_hint")
+		connectorID = idpHint
 	}
 	connectors, err := s.storage.ListConnectors(ctx)
 	if err != nil {

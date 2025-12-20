@@ -52,6 +52,38 @@ func TestHandleAuthorizationWithIDPHint(t *testing.T) {
 	require.Equal(t, "client", loc.Query().Get("client_id"))
 }
 
+func TestHandleAuthorizationWithIDPHintConsent(t *testing.T) {
+	httpServer, server := newTestServer(t, nil)
+	defer httpServer.Close()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth?client_id=client&redirect_uri=http://example.com/cb&response_type=code&idp_hint=consent", nil)
+
+	server.handleAuthorization(rr, req)
+
+	require.Equal(t, http.StatusFound, rr.Code)
+	loc, err := rr.Result().Location()
+	require.NoError(t, err)
+	require.Equal(t, "/auth/mock", loc.Path)
+	require.Equal(t, "force", loc.Query().Get("approval_prompt"))
+}
+
+func TestHandleAuthorizationWithIDPHintLogin(t *testing.T) {
+	httpServer, server := newTestServer(t, nil)
+	defer httpServer.Close()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth?client_id=client&redirect_uri=http://example.com/cb&response_type=code&idp_hint=login", nil)
+
+	server.handleAuthorization(rr, req)
+
+	require.Equal(t, http.StatusFound, rr.Code)
+	loc, err := rr.Result().Location()
+	require.NoError(t, err)
+	require.Equal(t, "/auth/mock", loc.Path)
+	require.Equal(t, "force", loc.Query().Get("approval_prompt"))
+}
+
 func TestHandleDiscovery(t *testing.T) {
 	httpServer, server := newTestServer(t, nil)
 	defer httpServer.Close()
